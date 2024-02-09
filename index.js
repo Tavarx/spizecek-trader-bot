@@ -1,101 +1,193 @@
 require('dotenv').config(); // Načtení proměnných z .env souboru
 
 const { Client, GatewayIntentBits } = require('discord.js');
+const { Sequelize, DataTypes } = require('sequelize');
+
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers] });
 
-// Nastavení prefixu pro příkazy
-const prefix = '!';
-
-// Původní cena měny
-let cena = 100;
-
-// Objekt uživatelů a jejich stav
-const users = {};
-
-client.once('ready', () => {
-    console.log('Ready!');
+// Připojení k SQLite databázi
+const sequelize = new Sequelize({
+  dialect: 'sqlite',
+  storage: 'database.sqlite',
+  logging: false
 });
 
-client.on('messageCreate', message => {
-    if (message.author.bot || !message.content.startsWith(prefix)) return;
-    if (!users[message.author.id]) { users[message.author.id] = { money: 10000, currency: 0 } }
+// Definice modelu pro uživatele
+const User = sequelize.define('User', {
+  discordId: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true
+  },
+  money: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 10000
+  },
+  currency: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  }
+});
 
-    const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
+// Definice modelu pro cenu měny
+const CurrencyPrice = sequelize.define('CurrencyPrice', {
+  price: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 100
+  }
+});
 
-    // Příkaz pro zjištění stavu účtu
-    if (command === 'stav') {
-        const userBalance = users[message.author.id] || { money: 0, currency: 0 };
-        message.channel.send(`Máte ${userBalance.money} zimbabwských dolarů a ${userBalance.currency} matmaroinů.`);
+// Vytvoření inicializačního záznamu ceny měny
+sequelize.sync().then(async () => {
+    try {
+        const currencyPriceCount = await CurrencyPrice.count();
+        if (currencyPriceCount === 0) {
+            await CurrencyPrice.create({ price: 100 }); // inicializace ceny měny na 100
+        }
+    } catch (error) {
+        console.error('Error during initialization:', error);
+    }
+});
+
+// Vytvoření tabulek v databázi (pokud neexistují)
+sequelize.sync();
+
+const prefix = '!'; // Definice prefixu pro příkazy
+
+client.once('ready', () => {
+  console.log('Ready!');
+});
+
+client.on('messageCreate', async message => {
+  if (message.author.bot || !message.content.startsWith(prefix)) return;
+
+  const args = message.content.slice(prefix.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  if (command === 'stav') {
+    try {
+      let user = await User.findOne({ where: { discordId: message.author.id } });
+      if (!user) {
+        user = await User.create({ discordId: message.author.id });
+      }
+      message.channel.send(`Máte ${user.money} zimbabwských dolarů a ${user.currency} matmaroinů.`);
+    } catch (error) {
+      console.error('Error:', error);
+      message.channel.send('Došlo k chybě při zpracování požadavku.');
+    }
+  }
+
+  if (command === 'cena') {
+    try {
+      const currencyPrice = await CurrencyPrice.findOne();
+      message.channel.send(`Aktuální cena jednoho matmaroinu je: ${currencyPrice.price} zimbabwských dolarů`);
+    } catch (error) {
+      console.error('Error:', error);
+      message.channel.send('Došlo k chybě při zpracování požadavku.');
+    }
+  }
+
+	// Příkaz pro nákup měny
+if (command === 'koupit') {
+  const amount = parseInt(args[0]);
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return message.channel.send('Neplatné množství.');
+  }
+
+  try {
+    const user = await User.findOne({ where: { discordId: message.author.id } });
+    const currencyPrice = await CurrencyPrice.findOne();
+
+    const cost = amount * currencyPrice.price;
+    if (cost > user.money) {
+      return message.channel.send('Nemáte dostatek zimbabwských dolarů.');
     }
 
-    // Příkaz pro zjištění ceny měny
-    if (command === 'cena') {
-        message.channel.send(`Aktuální cena jednoho matmaroinu je: ${cena} zimbabwských dolarů`);
+    user.money -= cost;
+    user.currency += amount;
+    await user.save();
+
+    // Změna ceny měny po nákupu
+    currencyPrice.price += amount;
+    await currencyPrice.save();
+
+    message.channel.send(`Koupili jste ${amount} matmaroinů za ${cost} zimbabwských dolarů.`);
+  } catch (error) {
+    console.error('Error:', error);
+    message.channel.send('Došlo k chybě při zpracování požadavku.');
+  }
+}
+
+// Příkaz pro prodej měny
+if (command === 'prodat') {
+  const amount = parseInt(args[0]);
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return message.channel.send('Neplatné množství.');
+  }
+
+  try {
+    const user = await User.findOne({ where: { discordId: message.author.id } });
+    const currencyPrice = await CurrencyPrice.findOne();
+
+    if (amount > user.currency) {
+      return message.channel.send('Nemáte dostatek matmaroinů k prodeji.');
     }
 
-    // Příkaz pro nákup měny
-    if (command === 'koupit') {
-        const amount = parseInt(args[0]);
-        if (!amount || isNaN(amount) || amount <= 0) {
-            return message.channel.send('Neplatné množství.');
-        }
+    const earnings = amount * currencyPrice.price;
+    user.money += earnings;
+    user.currency -= amount;
+    await user.save();
 
-        const cost = amount * cena;
-        const userBalance = users[message.author.id] || { money: 0, currency: 0 };
-        if (cost > userBalance.money) {
-            return message.channel.send('Nemáte dostatek zimbabwských dolarů.');
-        }
+    // Změna ceny měny po prodeji
+    currencyPrice.price -= amount;
+    await currencyPrice.save();
 
-        users[message.author.id].money -= cost;
-        users[message.author.id].currency += amount;
-        message.channel.send(`Koupili jste ${amount} matmaroinů za ${cost} zimbabwských dolarů.`);
-        cena += amount; // Zvýšení ceny měny po nákupu
+    message.channel.send(`Prodali jste ${amount} matmaroinů za ${earnings} zimbabwských dolarů.`);
+  } catch (error) {
+    console.error('Error:', error);
+    message.channel.send('Došlo k chybě při zpracování požadavku.');
+  }
+}
+
+
+if (command === 'give') {
+  const recipient = message.mentions.users.first();
+  if (!recipient) return message.channel.send('Neplatný uživatel.');
+
+  const amount = parseInt(args[1]);
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return message.channel.send('Neplatné množství.');
+  }
+
+  try {
+    const sender = await User.findOne({ where: { discordId: message.author.id } });
+    const recipientUser = await User.findOne({ where: { discordId: recipient.id } });
+
+    if (amount > sender.money) {
+      return message.channel.send('Nemáte dostatek zimbabwských dolarů.');
     }
 
-    // Příkaz pro prodej měny
-    if (command === 'prodat') {
-        const amount = parseInt(args[0]);
-        if (!amount || isNaN(amount) || amount <= 0) {
-            return message.channel.send('Neplatné množství.');
-        }
-
-        const userBalance = users[message.author.id] || { money: 0, currency: 0 };
-        if (amount > userBalance.currency) {
-            return message.channel.send('Nemáte dostatek matmaroinů k prodeji.');
-        }
-
-        const earnings = amount * cena;
-        users[message.author.id].money += earnings;
-        users[message.author.id].currency -= amount;
-        message.channel.send(`Prodali jste ${amount} matmaroinů za ${earnings} zimbabwských dolarů.`);
-        cena -= amount; // Snížení ceny měny po prodeji
+    if (recipient.id === message.author.id) {
+      return message.channel.send('Nemůžete poslat zimbabwské dolary sami sobě.');
     }
 
-    // Příkaz pro poslání peněz uživateli
-    if (command === 'give') {
-        const recipient = message.mentions.users.first();
-        if (!recipient) return message.channel.send('Neplatný uživatel.');
+    sender.money -= amount;
+    recipientUser.money += amount;
 
-        const amount = parseInt(args[1]);
-        if (!amount || isNaN(amount) || amount <= 0) {
-            return message.channel.send('Neplatné množství.');
-        }
+    await sender.save();
+    await recipientUser.save();
 
-        const senderBalance = users[message.author.id] || { money: 0, currency: 0 };
-        if (amount > senderBalance.money) {
-            return message.channel.send('Nemáte dostatek zimbabwských dolarů.');
-        }
+    message.channel.send(`Poslali jste ${amount} zimbabwských dolarů uživateli ${recipient}.`);
+  } catch (error) {
+    console.error('Error:', error);
+    message.channel.send('Došlo k chybě při zpracování požadavku.');
+  }
+}
 
-        if (recipient.id === message.author.id) { // Kontrola zda uživatel neobchoduje sám se sebou
-            return message.channel.send('Nemůžete poslat zimbabwské dolary sami sobě.');
-        }
 
-        users[message.author.id].money -= amount;
-        users[recipient.id] = users[recipient.id] || { money: 0, currency: 0 };
-        users[recipient.id].money += amount;
-        message.channel.send(`Poslali jste ${amount} zimbabwských dolarů uživateli ${recipient}.`);
-    }
 });
 
 client.login(process.env.DISCORD_BOT_TOKEN); // Použití tokenu z .env souboru
