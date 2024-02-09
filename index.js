@@ -71,11 +71,11 @@ if (command === 'help') {
     // Zde můžete vytvořit embed pro lepší vizuální vzhled nápovědy
     const helpMessage = `
         **Nápověda: Dostupné příkazy**
-        - !stav: Zobrazí stav vašeho účtu.
-        - !cena: Zobrazí aktuální cenu jednoho matmaroinu.
-        - !koupit [množství]: Koupí zadané množství matmaroinů.
-        - !prodat [množství]: Prodej zadané množství matmaroinů.
-        - !give [uživatel] [množství]: Pošle zadané množství matmaroinů zadanému uživateli.
+        !stav: Zobrazí stav vašeho účtu.
+        !cena: Zobrazí aktuální cenu jednoho matmaroinu.
+        !koupit [množství]: Koupí zadané množství matmaroinů.
+        !prodat [množství]: Prodej zadané množství matmaroinů.
+        !give [uživatel] [množství]: Pošle zadané množství matmaroinů zadanému uživateli.
     `;
     message.channel.send(helpMessage);
 }
