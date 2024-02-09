@@ -75,7 +75,7 @@ if (command === 'help') {
         !cena: Zobrazí aktuální cenu jednoho matmaroinu.
         !koupit [množství]: Koupí zadané množství matmaroinů.
         !prodat [množství]: Prodej zadané množství matmaroinů.
-        !give [uživatel] [množství]: Pošle zadané množství matmaroinů zadanému uživateli.
+        !give [uživatel] [množství]: Pošle zadané množství zimbabwských dolarů zadanému uživateli.
     `;
     message.channel.send(helpMessage);
 }
