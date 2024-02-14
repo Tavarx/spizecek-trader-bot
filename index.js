@@ -37,7 +37,18 @@ const CurrencyPrice = sequelize.define('CurrencyPrice', {
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 100
-  }
+  },
+	  lastBuyDiscordId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: false
+    },
+	  lastSellDiscordId: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: false
+    },
+
 });
 
 // Vytvoření inicializačního záznamu ceny měny
@@ -76,6 +87,7 @@ if (command === 'help') {
         !koupit [množství]: Koupí zadané množství matmaroinů.
         !prodat [množství]: Prodej zadané množství matmaroinů.
         !give [uživatel] [množství]: Pošle zadané množství zimbabwských dolarů zadanému uživateli.
+		!leaderboard: Zobrazí žebříček uživatelů
     `;
     message.channel.send(helpMessage);
 }
@@ -115,6 +127,10 @@ if (command === 'koupit') {
     const currencyPrice = await CurrencyPrice.findOne();
 
     const cost = amount * currencyPrice.price;
+
+	if (currencyPrice.lastSellDiscordId == user.discordId) {
+		return message.channel.send("Nemůžete obchodovat sám se sebou.")
+	}
     if (cost > user.money) {
       return message.channel.send('Nemáte dostatek zimbabwských dolarů.');
     }
@@ -125,6 +141,7 @@ if (command === 'koupit') {
 
     // Změna ceny měny po nákupu
     currencyPrice.price += amount;
+	currencyPrice.lastBuyDiscordId = user.discordId
     await currencyPrice.save();
 
     message.channel.send(`Koupili jste ${amount} matmaroinů za ${cost} zimbabwských dolarů.`);
@@ -145,6 +162,9 @@ if (command === 'prodat') {
     const user = await User.findOne({ where: { discordId: message.author.id } });
     const currencyPrice = await CurrencyPrice.findOne();
 
+	if (currencyPrice.lastBuyDiscordId == user.discordId) {
+		return message.channel.send("Nemůžete obchodovat sám se sebou.")
+	}  
     if (amount > user.currency) {
       return message.channel.send('Nemáte dostatek matmaroinů k prodeji.');
     }
@@ -156,6 +176,7 @@ if (command === 'prodat') {
 
     // Změna ceny měny po prodeji
     currencyPrice.price -= amount;
+	currencyPrice.lastSellDiscordId = user.discordId
     await currencyPrice.save();
 
     message.channel.send(`Prodali jste ${amount} matmaroinů za ${earnings} zimbabwských dolarů.`);
@@ -198,6 +219,31 @@ if (command === 'give') {
     console.error('Error:', error);
     message.channel.send('Došlo k chybě při zpracování požadavku.');
   }
+}
+
+// Příkaz pro zobrazení žebříčku uživatelů
+if (command === 'leaderboard') {
+    try {
+        // Získání uživatelů seřazených podle množství měny
+        const topUsers = await User.findAll({
+            order: [
+                ['money', 'DESC'] // Seřadí uživatele s nejvíce měny na začátek
+            ],
+            limit: 10 // Zobrazí pouze prvních 10 uživatelů
+        });
+
+        // Vytvoření zprávy s žebříčkem
+        let leaderboardMessage = '**Žebříček nejbohatších uživatelů:**\n';
+        topUsers.forEach((user, index) => {
+            leaderboardMessage += `${index + 1}. <@${user.discordId}> - ${user.money} zimbabwských dolarů\n`;
+        });
+
+        // Odeslání zprávy se žebříčkem do kanálu
+        message.channel.send({content: leaderboardMessage, allowedMentions: { parse: [] } });
+    } catch (error) {
+        console.error('Error:', error);
+        message.channel.send('Došlo k chybě při zpracování požadavku na žebříček.');
+    }
 }
 
 

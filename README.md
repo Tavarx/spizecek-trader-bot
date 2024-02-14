@@ -1,4 +1,4 @@
-# Discord Bot s ekonomikou
+# cruelty squad type beat discord bot (hodler)
 
 ## Použití
 
